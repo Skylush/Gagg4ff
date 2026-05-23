@@ -1,4 +1,4 @@
-name: Auto Renew Server Time
+name: Auto Renew Server Time1
 
 on:
   workflow_dispatch:
