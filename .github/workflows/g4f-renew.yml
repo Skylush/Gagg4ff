@@ -1,0 +1,84 @@
+name: 🎮 Gaming4Free Auto Renew
+
+# ─────────────────────────────────────────────────────────────────
+#  每 80 分钟续期一次（每日 18 次，精确列举时间点）
+#  如 GitHub Actions 调度有延迟，也不会超过 80 min 间隔太多
+# ─────────────────────────────────────────────────────────────────
+on:
+  schedule:
+    - cron: '0 0 * * *'    # 00:00 UTC
+    - cron: '20 1 * * *'   # 01:20 UTC
+    - cron: '40 2 * * *'   # 02:40 UTC
+    - cron: '0 4 * * *'    # 04:00 UTC
+    - cron: '20 5 * * *'   # 05:20 UTC
+    - cron: '40 6 * * *'   # 06:40 UTC
+    - cron: '0 8 * * *'    # 08:00 UTC
+    - cron: '20 9 * * *'   # 09:20 UTC
+    - cron: '40 10 * * *'  # 10:40 UTC
+    - cron: '0 12 * * *'   # 12:00 UTC
+    - cron: '20 13 * * *'  # 13:20 UTC
+    - cron: '40 14 * * *'  # 14:40 UTC
+    - cron: '0 16 * * *'   # 16:00 UTC
+    - cron: '20 17 * * *'  # 17:20 UTC
+    - cron: '40 18 * * *'  # 18:40 UTC
+    - cron: '0 20 * * *'   # 20:00 UTC
+    - cron: '20 21 * * *'  # 21:20 UTC
+    - cron: '40 22 * * *'  # 22:40 UTC
+  workflow_dispatch:         # 支持手动触发
+
+# 防止并发续期冲突
+concurrency:
+  group: g4f-renew
+  cancel-in-progress: true
+
+jobs:
+  renew:
+    name: Renew Server
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # ── 1. 拉取代码 ─────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Python 环境 ──────────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # ── 3. 缓存 pip（加速后续运行）─────────────────────────────
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-playwright-requests
+
+      # ── 4. 安装依赖 ─────────────────────────────────────────────
+      - name: Install dependencies
+        run: |
+          pip install playwright requests
+          playwright install chromium --with-deps
+
+      # ── 5. 执行续期脚本 ─────────────────────────────────────────
+      - name: Run renewal script
+        env:
+          TG_BOT_TOKEN:  ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID:    ${{ secrets.TG_CHAT_ID }}
+          G4F_COOKIES:   ${{ secrets.G4F_COOKIES }}
+          # 面板续期页面 URL（默认首页，如需指定子页面可覆盖此 secret）
+          PANEL_URL:     ${{ secrets.PANEL_URL || 'https://control.gaming4free.net' }}
+          # Livewire 更新端点（直接 POST 续期，作为首选方式）
+          LIVEWIRE_URL:  'https://control.gaming4free.net/livewire-ad07ce4b/update'
+        run: python scripts/g4f_renew.py
+
+      # ── 6. 上传截图 Artifact（无论成功失败都保留）──────────────
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ github.run_number }}
+          path: /tmp/*.png
+          retention-days: 7
+          if-no-files-found: ignore
