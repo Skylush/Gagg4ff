@@ -15,6 +15,7 @@ jobs:
       GFE_SERVER_URL: ${{ secrets.GFE_SERVER_URL }}
       TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
       TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+      GFE_SERVER_ID: ${{ secrets.GFE_SERVER_ID }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
