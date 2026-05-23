@@ -1,0 +1,44 @@
+name: Auto Renew Server Time
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */4 * * *"
+    - cron: "20 1,5,9,13,17,21 * * *"
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GFE_COOKIE: ${{ secrets.GFE_COOKIE }}
+      GFE_SERVER_ID: ${{ secrets.GFE_SERVER_ID }}
+      GFE_SERVER_URL: ${{ secrets.GFE_SERVER_URL }}
+      TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+      TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run renew task
+        run: npm run renew
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gfe-renew-artifacts
+          path: artifacts/
+          if-no-files-found: ignore
