@@ -1,94 +1,113 @@
-# Gaming4Free 自动续期
+# Gaming4Free 自动续期工作流
 
-每 **80 分钟**自动续期一次，通过 Telegram 通知结果，失败时附带截图和日志链接。
-
----
-
-## 🚀 部署步骤
-
-### 1. Fork / 上传仓库
-
-将以下文件上传到你的 GitHub 仓库：
-
-```
-.github/workflows/renew.yml
-scripts/renew.js
-package.json
-```
-
-### 2. 配置 Repository Secrets
-
-进入仓库 → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**，添加以下三个 Secret：
-
-| Secret 名称 | 值 | 说明 |
-|---|---|---|
-| `GAMING4FREE_COOKIES` | 见下方说明 | 面板登录 Cookie |
-| `TG_BOT_TOKEN` | `123456:ABC-DEF...` | BotFather 创建的 Bot Token |
-| `TG_CHAT_ID` | `-100xxxxxxxxxx` 或 `@username` | 接收通知的群组/频道/用户 ID |
-
-#### Cookie 获取方式
-
-打开浏览器开发者工具（F12）→ Application → Cookies → `control.gaming4free.net`，
-将所有 Cookie 拼接为一行字符串（格式与浏览器 `Cookie` 请求头相同）：
-
-```
-_ga=GA1.1.xxx; remember_web_xxx=eyJ...; XSRF-TOKEN=eyJ...; pelican_session=eyJ...
-```
-
-> ⚠️ Cookie 有有效期，过期后需要重新登录并更新 Secret。
-
-#### 获取 Telegram Chat ID
-
-1. 将 Bot 加入目标群组或频道
-2. 发送一条消息到群组
-3. 访问 `https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates`
-4. 在返回的 JSON 中找到 `chat.id`
-
-### 3. 手动触发测试
-
-配置完成后，进入 **Actions** → **🔄 Gaming4Free 自动续期** → **Run workflow** 手动测试一次，确认 TG 能收到通知。
+每 **80 分钟**自动续期一次，续期成功/失败均发送 Telegram 通知。
 
 ---
 
-## 📅 定时计划
-
-每 80 分钟执行一次，一天共 18 次：
+## 文件结构
 
 ```
-00:00 → 01:20 → 02:40 → 04:00 → 05:20 → 06:40
-08:00 → 09:20 → 10:40 → 12:00 → 13:20 → 14:40
-16:00 → 17:20 → 18:40 → 20:00 → 21:20 → 22:40
+.github/
+└── workflows/
+    └── g4f-renew.yml      # GitHub Actions 工作流
+scripts/
+└── g4f_renew.py           # 续期脚本（Playwright + HTTP 双方案）
 ```
-
-> GitHub Actions 的 cron 时区为 **UTC**，上方时间均为 UTC。
 
 ---
 
-## 📬 通知格式
+## 配置步骤
 
-**✅ 续期成功**
+### 1. Fork / 创建仓库
+
+将本项目推送到你的 GitHub 仓库（可以是 Private）。
+
+---
+
+### 2. 配置 GitHub Secrets
+
+进入仓库 → **Settings → Secrets and variables → Actions → New repository secret**
+
+| Secret 名称    | 说明                             | 示例                                 |
+| -------------- | -------------------------------- | ------------------------------------ |
+| `TG_BOT_TOKEN` | Telegram Bot Token               | `123456:ABCdef...`                   |
+| `TG_CHAT_ID`   | 接收通知的 Chat ID（个人/群组）  | `123456789`                          |
+| `G4F_COOKIES`  | 登录 Cookie 字符串（见下方说明） | `_ga=...; remember_web_...=...; ...` |
+| `PANEL_URL`    | *(可选)* 面板续期页面 URL        | `https://control.gaming4free.net`    |
+
+---
+
+### 3. 获取 Cookie 字符串
+
+1. 浏览器登录 `https://control.gaming4free.net`
+2. 按 **F12** → Network 标签 → 刷新页面
+3. 找到任意一个请求，复制请求头中的 `Cookie:` 值
+4. 将整行 Cookie 字符串保存到 Secret `G4F_COOKIES`
+
+> ⚠️ Cookie 会过期（通常几天到几周）。过期后续期失败，TG 会收到通知，届时重新获取并更新 Secret 即可。  
+> `remember_web_*` 是长效登录 token，只要它有效，其他 Session Cookie 会自动刷新。
+
+---
+
+### 4. 创建 Telegram Bot
+
+1. 在 Telegram 找 `@BotFather`，发送 `/newbot` 创建 Bot
+2. 记下 **Bot Token**
+3. 向 Bot 发一条消息，然后访问：  
+   `https://api.telegram.org/bot<TOKEN>/getUpdates`  
+   从返回的 `chat.id` 获取你的 Chat ID
+
+---
+
+### 5. 手动触发测试
+
+1. 仓库 → **Actions** → 左侧 `Gaming4Free Auto Renew`
+2. 点击 **Run workflow** → 查看日志
+3. 检查 Telegram 是否收到通知
+
+---
+
+## 通知样例
+
+**续期成功：**
+
 ```
 ✅ Gaming4Free 续期成功
-
-🕐 时间：2025/5/24 12:00:00
-🌐 HTTP：200
-⏳ 服务器剩余到期时间：2025-07-01 00:00:00
+🕐 时间：2025-01-15 08:00:00 UTC
+⏳ 服务器信息：Expires in 3 days
+[附：截图]
 ```
 
-**❌ 续期失败**
-- 发送错误截图（含面板当前状态）
-- 附带 HTTP 状态码和响应日志前 800 字符
-- 附带 GitHub Actions 完整日志链接
+**续期失败：**
+
+```
+❌ Gaming4Free 续期失败
+🕐 时间：2025-01-15 08:00:00 UTC
+🔴 错误：未找到续期按钮...
+详细日志见附件 ↓
+[附：error.log + 截图]
+```
 
 ---
 
-## 🔧 常见问题
+## 工作原理
 
-**Q: 到期时间显示「未能从响应中解析」？**  
-A: 该续期接口返回的 JSON 字段名不在预设列表中。可打开 Actions 日志查看完整响应体，然后修改 `scripts/renew.js` 中 `extractExpiry` 函数，添加对应字段名。
+脚本采用**双方案容错**：
 
-**Q: Cookie 失效怎么办？**  
-A: 重新登录面板，从浏览器复制最新 Cookie，更新 GitHub Secret 中的 `GAMING4FREE_COOKIES`。
+1. **Playwright（主力方案）**：启动无头 Chromium，携带 Cookie 打开面板，自动查找并点击续期按钮，提取剩余到期时间
+2. **HTTP 直请求（备用方案）**：获取页面 Livewire 快照后，直接 POST 到 Livewire 更新端点调用续期方法
 
-**Q: 如何修改执行间隔？**  
-A: 修改 `.github/workflows/renew.yml` 中的 `cron` 表达式。
+任一方案成功即算续期完成；两种方案均失败才发送失败通知。
+
+---
+
+## 常见问题
+
+**Q: GitHub Actions 定时任务有延迟？**  
+A: GitHub 免费计划高峰期可能延迟 5–15 分钟，不影响续期效果（距 80 分钟上限仍有充裕）。
+
+**Q: 续期按钮找不到？**  
+A: 检查失败截图，观察页面按钮名称，在 `scripts/g4f_renew.py` 的 `RENEW_SELECTORS` 列表顶部添加对应选择器，重新推送即可。
+
+**Q: Cookie 多久需要更新一次？**  
+A: 视服务提供商而定，一般 7–30 天。TG 收到失败通知后更新 `G4F_COOKIES` Secret 即可。
