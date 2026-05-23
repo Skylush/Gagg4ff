@@ -1,0 +1,17 @@
+{
+  "name": "gaming4free-renew",
+  "version": "1.0.0",
+  "description": "Gaming4Free 面板自动续期机器人",
+  "private": true,
+  "scripts": {
+    "renew": "node scripts/renew.js",
+    "test": "echo '手动测试：确保已设置环境变量后执行 npm run renew'"
+  },
+  "dependencies": {
+    "form-data": "^4.0.0",
+    "playwright": "^1.44.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
