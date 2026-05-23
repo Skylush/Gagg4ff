@@ -1,113 +1,52 @@
-# Gaming4Free 自动续期工作流
+# GFE 自动续期
 
-每 **80 分钟**自动续期一次，续期成功/失败均发送 Telegram 通知。
+这个项目通过 GitHub Actions 定时访问 Gaming4Free 控制面板，在满足条件时自动为服务器续期 90 分钟，并通过 Telegram 推送结果。
 
----
+## 功能
 
-## 文件结构
+- 每 10 分钟执行一次检查
+- 剩余时间低于 `70.5 小时` 时才执行续期，避免撞上 `72 小时` 上限
+- 单次续期增加 `90 分钟`
+- 自动识别 `10 分钟` 冷却期，冷却中不会重复点击
+- 成功时推送服务器剩余时间
+- 跳过时推送跳过原因
+- 失败时推送错误日志，并附带页面截图
+- 每次运行都会把日志和截图上传到 GitHub Actions artifact
 
-```
-.github/
-└── workflows/
-    └── g4f-renew.yml      # GitHub Actions 工作流
-scripts/
-└── g4f_renew.py           # 续期脚本（Playwright + HTTP 双方案）
-```
+## 使用的仓库密钥
 
----
+在 GitHub 仓库 `Settings > Secrets and variables > Actions` 中添加：
 
-## 配置步骤
+- `GFE_COOKIE`: 控制台登录后的完整 Cookie 字符串
+- `TG_BOT_TOKEN`: Telegram Bot Token
+- `TG_CHAT_ID`: 接收消息的 chat id
+- `GFE_SERVER_URL`: 可选，默认值是 `https://control.gaming4free.net/server/e7c245d6/public-renewing`
 
-### 1. Fork / 创建仓库
+## 工作方式
 
-将本项目推送到你的 GitHub 仓库（可以是 Private）。
+脚本会直接打开服务器的 `public-renewing` 页面，读取页面中的 `renewal-timer` 组件快照：
 
----
+- `expiresTimestamp`: 当前到期时间
+- `cooldownExpiry`: 当前冷却结束时间
+- `userBalance`: 页面余额字段
 
-### 2. 配置 GitHub Secrets
+如果未处于冷却期且剩余时间未接近上限，就点击 `+ 90 min` 按钮，等待页面刷新后再次读取剩余时间，确认是否续期成功。
 
-进入仓库 → **Settings → Secrets and variables → Actions → New repository secret**
+## 本地运行
 
-| Secret 名称    | 说明                             | 示例                                 |
-| -------------- | -------------------------------- | ------------------------------------ |
-| `TG_BOT_TOKEN` | Telegram Bot Token               | `123456:ABCdef...`                   |
-| `TG_CHAT_ID`   | 接收通知的 Chat ID（个人/群组）  | `123456789`                          |
-| `G4F_COOKIES`  | 登录 Cookie 字符串（见下方说明） | `_ga=...; remember_web_...=...; ...` |
-| `PANEL_URL`    | *(可选)* 面板续期页面 URL        | `https://control.gaming4free.net`    |
+1. 安装 Node.js 20+
+2. 安装依赖
+3. 设置环境变量后执行任务
 
----
-
-### 3. 获取 Cookie 字符串
-
-1. 浏览器登录 `https://control.gaming4free.net`
-2. 按 **F12** → Network 标签 → 刷新页面
-3. 找到任意一个请求，复制请求头中的 `Cookie:` 值
-4. 将整行 Cookie 字符串保存到 Secret `G4F_COOKIES`
-
-> ⚠️ Cookie 会过期（通常几天到几周）。过期后续期失败，TG 会收到通知，届时重新获取并更新 Secret 即可。  
-> `remember_web_*` 是长效登录 token，只要它有效，其他 Session Cookie 会自动刷新。
-
----
-
-### 4. 创建 Telegram Bot
-
-1. 在 Telegram 找 `@BotFather`，发送 `/newbot` 创建 Bot
-2. 记下 **Bot Token**
-3. 向 Bot 发一条消息，然后访问：  
-   `https://api.telegram.org/bot<TOKEN>/getUpdates`  
-   从返回的 `chat.id` 获取你的 Chat ID
-
----
-
-### 5. 手动触发测试
-
-1. 仓库 → **Actions** → 左侧 `Gaming4Free Auto Renew`
-2. 点击 **Run workflow** → 查看日志
-3. 检查 Telegram 是否收到通知
-
----
-
-## 通知样例
-
-**续期成功：**
-
-```
-✅ Gaming4Free 续期成功
-🕐 时间：2025-01-15 08:00:00 UTC
-⏳ 服务器信息：Expires in 3 days
-[附：截图]
+```bash
+npm install
+export GFE_COOKIE='你的 cookie'
+export TG_BOT_TOKEN='你的 bot token'
+export TG_CHAT_ID='你的 chat id'
+npm run renew
 ```
 
-**续期失败：**
+## 注意
 
-```
-❌ Gaming4Free 续期失败
-🕐 时间：2025-01-15 08:00:00 UTC
-🔴 错误：未找到续期按钮...
-详细日志见附件 ↓
-[附：error.log + 截图]
-```
-
----
-
-## 工作原理
-
-脚本采用**双方案容错**：
-
-1. **Playwright（主力方案）**：启动无头 Chromium，携带 Cookie 打开面板，自动查找并点击续期按钮，提取剩余到期时间
-2. **HTTP 直请求（备用方案）**：获取页面 Livewire 快照后，直接 POST 到 Livewire 更新端点调用续期方法
-
-任一方案成功即算续期完成；两种方案均失败才发送失败通知。
-
----
-
-## 常见问题
-
-**Q: GitHub Actions 定时任务有延迟？**  
-A: GitHub 免费计划高峰期可能延迟 5–15 分钟，不影响续期效果（距 80 分钟上限仍有充裕）。
-
-**Q: 续期按钮找不到？**  
-A: 检查失败截图，观察页面按钮名称，在 `scripts/g4f_renew.py` 的 `RENEW_SELECTORS` 列表顶部添加对应选择器，重新推送即可。
-
-**Q: Cookie 多久需要更新一次？**  
-A: 视服务提供商而定，一般 7–30 天。TG 收到失败通知后更新 `G4F_COOKIES` Secret 即可。
+- Cookie 失效后，任务会跳转到登录页并触发失败通知
+- 如果站点后续改版，按钮选择器或组件结构可能需要同步调整，入口脚本在 [src/index.js](/Users/lusky/Downloads/gfe/src/index.js)
