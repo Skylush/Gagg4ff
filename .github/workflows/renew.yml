@@ -3,8 +3,7 @@ name: Auto Renew Server Time
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */4 * * *"
-    - cron: "20 1,5,9,13,17,21 * * *"
+    - cron: "0 * * * *"
 
 jobs:
   renew:
