@@ -35,7 +35,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run renew task
-        run: npm run renew
+        run: xvfb-run -a --server-args="-screen 0 1440x1024x24" npm run renew
 
       - name: Upload artifacts
         if: always()
