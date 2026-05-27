@@ -2,6 +2,13 @@
 
 这个项目通过 GitHub Actions 定时访问 Gaming4Free 控制面板，在满足条件时自动为服务器续期 90 分钟，并通过 Telegram 推送结果。
 
+项目已经拆出一层可复用基础模块，方便迁移到其他类似面板站点：
+
+- `src/lib/common.js`: 环境变量、日志、Cookie 解析、时间格式化
+- `src/lib/browser.js`: Playwright 会话启动、页面日志、跳转校验、截图
+- `src/lib/telegram.js`: Telegram 文本/图片通知
+- `src/lib/turnstile.js`: Cloudflare Turnstile 的通用检测、聚焦、尝试点击、等待处理
+
 ## 功能
 
 - 每 80 分钟执行一次检查

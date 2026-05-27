@@ -1,7 +1,24 @@
-import fs from "node:fs/promises";
 import path from "node:path";
-import process from "node:process";
-import { chromium } from "playwright";
+import {
+  decodeHtmlAttribute,
+  formatDuration,
+  log,
+  persistLogs,
+  readOptionalEnv,
+  requireEnv
+} from "./lib/common.js";
+import {
+  captureScreenshot,
+  closeSession,
+  gotoAndVerify,
+  launchSession
+} from "./lib/browser.js";
+import {
+  notifyFailure,
+  notifySkip,
+  notifySuccess
+} from "./lib/telegram.js";
+import { handleTurnstile, hasTurnstile, waitForTurnstileToClear } from "./lib/turnstile.js";
 
 const DEFAULT_BASE_URL = "https://control.gaming4free.net";
 const MAX_SECONDS = 72 * 60 * 60;
@@ -12,26 +29,6 @@ const WAIT_AFTER_CLICK_MS = 15000;
 const ARTIFACT_DIR = path.resolve("artifacts");
 const SCREENSHOT_PATH = path.join(ARTIFACT_DIR, "renew-page.png");
 const LOG_PATH = path.join(ARTIFACT_DIR, "run.log");
-
-const runtimeLogs = [];
-
-function log(message) {
-  const line = `[${new Date().toISOString()}] ${message}`;
-  runtimeLogs.push(line);
-  console.log(line);
-}
-
-function requireEnv(name) {
-  const value = process.env[name]?.trim();
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-  return value;
-}
-
-function readOptionalEnv(name, fallback = "") {
-  return process.env[name]?.trim() || fallback;
-}
 
 function buildServerUrl(serverId) {
   return `${DEFAULT_BASE_URL}/server/${serverId}/public-renewing`;
@@ -45,47 +42,6 @@ function resolveServerUrl() {
 
   const serverId = requireEnv("GFE_SERVER_ID");
   return buildServerUrl(serverId);
-}
-
-function parseCookieHeader(cookieHeader, serverUrl) {
-  const url = new URL(serverUrl);
-
-  return cookieHeader
-    .split(";")
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .map((item) => {
-      const separatorIndex = item.indexOf("=");
-      if (separatorIndex === -1) {
-        return null;
-      }
-
-      const name = item.slice(0, separatorIndex).trim();
-      const value = item.slice(separatorIndex + 1).trim();
-      if (!name) {
-        return null;
-      }
-
-      return {
-        name,
-        value,
-        domain: url.hostname,
-        path: "/",
-        httpOnly: false,
-        secure: url.protocol === "https:",
-        sameSite: "Lax"
-      };
-    })
-    .filter(Boolean);
-}
-
-function decodeHtmlAttribute(value) {
-  return value
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">");
 }
 
 async function readTimerState(page) {
@@ -115,115 +71,6 @@ async function readTimerState(page) {
   };
 }
 
-function formatDuration(totalSeconds) {
-  const seconds = Math.max(0, Math.floor(totalSeconds));
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const remainSeconds = seconds % 60;
-  return `${hours}h ${minutes}m ${remainSeconds}s`;
-}
-
-async function ensureArtifactsDir() {
-  await fs.mkdir(ARTIFACT_DIR, { recursive: true });
-}
-
-async function persistLogs() {
-  await ensureArtifactsDir();
-  await fs.writeFile(LOG_PATH, `${runtimeLogs.join("\n")}\n`, "utf8");
-}
-
-async function sendTelegramMessage({ botToken, chatId, text }) {
-  const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json"
-    },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: "HTML"
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error(`Telegram sendMessage failed: ${response.status} ${await response.text()}`);
-  }
-}
-
-async function sendTelegramPhoto({ botToken, chatId, filePath, caption = "" }) {
-  const buffer = await fs.readFile(filePath);
-  const form = new FormData();
-  form.append("chat_id", chatId);
-  form.append("caption", caption);
-  form.append("photo", new Blob([buffer]), path.basename(filePath));
-
-  const response = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
-    method: "POST",
-    body: form
-  });
-
-  if (!response.ok) {
-    throw new Error(`Telegram sendPhoto failed: ${response.status} ${await response.text()}`);
-  }
-}
-
-function escapeHtml(text) {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-async function notifySuccess(botToken, chatId, remainingSeconds) {
-  const text = [
-    "<b>GFE 自动续期成功</b>",
-    `剩余时间: <code>${escapeHtml(formatDuration(remainingSeconds))}</code>`,
-    `时间增量: <code>${escapeHtml(formatDuration(EXTEND_SECONDS))}</code>`,
-    `冷却时间: <code>${escapeHtml(formatDuration(COOLDOWN_SECONDS))}</code>`
-  ].join("\n");
-
-  await sendTelegramMessage({ botToken, chatId, text });
-}
-
-async function notifySkip(botToken, chatId, reason, remainingSeconds, cooldownSeconds) {
-  const lines = ["<b>GFE 本轮未续期</b>", escapeHtml(reason)];
-
-  if (remainingSeconds >= 0) {
-    lines.push(`剩余时间: <code>${escapeHtml(formatDuration(remainingSeconds))}</code>`);
-  }
-
-  if (cooldownSeconds > 0) {
-    lines.push(`冷却剩余: <code>${escapeHtml(formatDuration(cooldownSeconds))}</code>`);
-  }
-
-  await sendTelegramMessage({ botToken, chatId, text: lines.join("\n") });
-}
-
-async function notifyFailure(botToken, chatId, error) {
-  const tailLogs = runtimeLogs.slice(-20).join("\n");
-  const message = [
-    "<b>GFE 自动续期失败</b>",
-    `错误: <code>${escapeHtml(error.message || String(error))}</code>`,
-    "",
-    "<b>日志片段</b>",
-    `<pre>${escapeHtml(tailLogs.slice(0, 3000))}</pre>`
-  ].join("\n");
-
-  await sendTelegramMessage({ botToken, chatId, text: message });
-
-  try {
-    await fs.access(SCREENSHOT_PATH);
-    await sendTelegramPhoto({
-      botToken,
-      chatId,
-      filePath: SCREENSHOT_PATH,
-      caption: "失败截图"
-    });
-  } catch {
-    log("Screenshot not available for Telegram notification.");
-  }
-}
-
 async function main() {
   let botToken = "";
   let chatId = "";
@@ -236,31 +83,24 @@ async function main() {
     chatId = requireEnv("TG_CHAT_ID");
     const serverUrl = resolveServerUrl();
 
-    await ensureArtifactsDir();
     log(`Opening ${serverUrl}`);
 
-    browser = await chromium.launch({
-      headless: true
-    });
-
-    const context = await browser.newContext({
+    ({ browser, page } = await launchSession({
+      serverUrl,
+      cookieHeader,
+      headless: true,
       viewport: { width: 1440, height: 1024 }
+    }));
+
+    await gotoAndVerify(page, serverUrl, {
+      waitUntil: "networkidle",
+      timeout: 60000,
+      loginPathHints: ["/login"]
     });
 
-    await context.addCookies(parseCookieHeader(cookieHeader, serverUrl));
-    page = await context.newPage();
-
-    page.on("console", (msg) => log(`PAGE ${msg.type().toUpperCase()}: ${msg.text()}`));
-    page.on("pageerror", (err) => log(`PAGEERROR: ${err.message}`));
-    page.on("requestfailed", (request) => {
-      const failure = request.failure();
-      log(`REQUESTFAILED: ${request.method()} ${request.url()} ${failure?.errorText || "unknown"}`);
-    });
-
-    await page.goto(serverUrl, { waitUntil: "networkidle", timeout: 60000 });
-
-    if (page.url().includes("/login")) {
-      throw new Error("Cookie login failed. The server redirected to the login page.");
+    const turnstileResult = await handleTurnstile(page, { timeoutMs: 15000, probeIntervalMs: 1500 });
+    if (turnstileResult.status === "timeout") {
+      throw new Error("Turnstile challenge detected but not solved in time.");
     }
 
     const before = await readTimerState(page);
@@ -269,20 +109,26 @@ async function main() {
     );
 
     if (before.cooldownSeconds > 0) {
-      await page.screenshot({ path: SCREENSHOT_PATH, fullPage: true });
-      await notifySkip(botToken, chatId, "当前仍处于冷却期。", before.remainingSeconds, before.cooldownSeconds);
+      await captureScreenshot(page, SCREENSHOT_PATH);
+      await notifySkip({
+        botToken,
+        chatId,
+        reason: "当前仍处于冷却期。",
+        remainingSeconds: before.remainingSeconds,
+        cooldownSeconds: before.cooldownSeconds
+      });
       return;
     }
 
     if (before.remainingSeconds >= SAFE_RENEW_THRESHOLD) {
-      await page.screenshot({ path: SCREENSHOT_PATH, fullPage: true });
-      await notifySkip(
+      await captureScreenshot(page, SCREENSHOT_PATH);
+      await notifySkip({
         botToken,
         chatId,
-        "剩余时间已接近 72 小时上限，本轮跳过。",
-        before.remainingSeconds,
-        before.cooldownSeconds
-      );
+        reason: "剩余时间已接近 72 小时上限，本轮跳过。",
+        remainingSeconds: before.remainingSeconds,
+        cooldownSeconds: before.cooldownSeconds
+      });
       return;
     }
 
@@ -296,11 +142,32 @@ async function main() {
 
     log("Clicking extend button.");
     await extendButton.click({ timeout: 30000 });
+
+    const postClickChallenge = await hasTurnstile(page);
+    if (postClickChallenge) {
+      log("Turnstile challenge appeared after clicking extend. Waiting for verification.");
+      const challengeResult = await handleTurnstile(page, {
+        timeoutMs: 60000,
+        probeIntervalMs: 1500
+      });
+      if (challengeResult.status === "timeout") {
+        throw new Error("Turnstile challenge appeared after clicking extend and was not solved in time.");
+      }
+
+      const clearResult = await waitForTurnstileToClear(page, {
+        timeoutMs: 30000,
+        probeIntervalMs: 1000
+      });
+      if (clearResult.status === "timeout") {
+        throw new Error("Turnstile challenge was solved, but the verification dialog did not clear.");
+      }
+    }
+
     await page.waitForTimeout(WAIT_AFTER_CLICK_MS);
     await page.reload({ waitUntil: "networkidle", timeout: 60000 });
 
     const after = await readTimerState(page);
-    await page.screenshot({ path: SCREENSHOT_PATH, fullPage: true });
+    await captureScreenshot(page, SCREENSHOT_PATH);
     log(
       `After extend: remaining=${formatDuration(after.remainingSeconds)}, cooldown=${formatDuration(after.cooldownSeconds)}`
     );
@@ -312,11 +179,17 @@ async function main() {
       );
     }
 
-    await notifySuccess(botToken, chatId, after.remainingSeconds);
+    await notifySuccess({
+      botToken,
+      chatId,
+      remainingSeconds: after.remainingSeconds,
+      extendSeconds: EXTEND_SECONDS,
+      cooldownSeconds: COOLDOWN_SECONDS
+    });
   } catch (error) {
     if (page) {
       try {
-        await page.screenshot({ path: SCREENSHOT_PATH, fullPage: true });
+        await captureScreenshot(page, SCREENSHOT_PATH);
       } catch (screenshotError) {
         log(`Failed to capture screenshot: ${screenshotError.message}`);
       }
@@ -324,7 +197,12 @@ async function main() {
 
     try {
       if (botToken && chatId) {
-        await notifyFailure(botToken, chatId, error);
+        await notifyFailure({
+          botToken,
+          chatId,
+          error,
+          screenshotPath: SCREENSHOT_PATH
+        });
       } else {
         log("Failure notification skipped because Telegram credentials are unavailable.");
       }
@@ -333,10 +211,8 @@ async function main() {
     }
     throw error;
   } finally {
-    await persistLogs();
-    if (browser) {
-      await browser.close();
-    }
+    await persistLogs(LOG_PATH);
+    await closeSession(browser);
   }
 }
 
