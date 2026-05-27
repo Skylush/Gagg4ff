@@ -136,7 +136,7 @@ def send_telegram_photo(token, chat_id, photo_path, caption=""):
 
 def notify_success(token, chat_id, remaining_seconds):
     text = "\n".join([
-        "<b>GFE 自动续期成功</b>",
+        "<b>GFE-US 自动续期成功</b>",
         f"剩余时间: <code>{escape_html(format_duration(remaining_seconds))}</code>",
         f"时间增量: <code>{escape_html(format_duration(EXTEND_SECONDS))}</code>",
         f"冷却时间: <code>{escape_html(format_duration(COOLDOWN_SECONDS))}</code>",
@@ -145,7 +145,7 @@ def notify_success(token, chat_id, remaining_seconds):
 
 
 def notify_skip(token, chat_id, reason, remaining_seconds=-1, cooldown_seconds=0):
-    lines = ["<b>GFE 本轮未续期</b>", escape_html(reason)]
+    lines = ["<b>GFE-US 本轮未续期</b>", escape_html(reason)]
     if remaining_seconds >= 0:
         lines.append(f"剩余时间: <code>{escape_html(format_duration(remaining_seconds))}</code>")
     if cooldown_seconds > 0:
@@ -156,7 +156,7 @@ def notify_skip(token, chat_id, reason, remaining_seconds=-1, cooldown_seconds=0
 def notify_failure(token, chat_id, error):
     tail = "\n".join(LOGS[-20:])[:3000]
     text = "\n".join([
-        "<b>GFE 自动续期失败</b>",
+        "<b>GFE-US 自动续期失败</b>",
         f"错误: <code>{escape_html(error)}</code>",
         "",
         "<b>日志片段</b>",
