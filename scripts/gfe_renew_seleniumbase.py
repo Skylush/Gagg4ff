@@ -6,6 +6,7 @@ import json
 import os
 import random
 import re
+import subprocess
 import sys
 import time
 import urllib.error
@@ -279,6 +280,130 @@ def expand_turnstile(sb):
         pass
 
 
+def activate_browser_window():
+    for class_name in ("chrome", "chromium"):
+        try:
+            result = subprocess.run(
+                ["xdotool", "search", "--onlyvisible", "--class", class_name],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            window_ids = [line for line in result.stdout.strip().splitlines() if line.strip()]
+            if window_ids:
+                subprocess.run(
+                    ["xdotool", "windowactivate", window_ids[0]],
+                    timeout=2,
+                    stderr=subprocess.DEVNULL,
+                )
+                time.sleep(0.2)
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def xdotool_click(x, y):
+    x, y = int(x), int(y)
+    activate_browser_window()
+    try:
+        subprocess.run(["xdotool", "mousemove", str(x), str(y)], timeout=2, stderr=subprocess.DEVNULL)
+        time.sleep(0.2)
+        subprocess.run(["xdotool", "click", "1"], timeout=2, stderr=subprocess.DEVNULL)
+        log(f"Clicked Turnstile by xdotool at ({x}, {y}).")
+        return True
+    except Exception as exc:
+        log(f"xdotool click failed at ({x}, {y}): {exc}")
+        return False
+
+
+def get_turnstile_click_coords(sb):
+    try:
+        return sb.execute_script("""
+            function visibleBox(el) {
+                if (!el) return null;
+                const rect = el.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) return null;
+                return {
+                    x: rect.x,
+                    y: rect.y,
+                    width: rect.width,
+                    height: rect.height,
+                    click_x: Math.round(rect.x + Math.min(32, Math.max(20, rect.width * 0.12))),
+                    click_y: Math.round(rect.y + rect.height / 2)
+                };
+            }
+
+            const iframes = Array.from(document.querySelectorAll('iframe'));
+            for (const iframe of iframes) {
+                const src = iframe.src || '';
+                if (src.includes('challenges.cloudflare.com') || src.includes('turnstile')) {
+                    const box = visibleBox(iframe);
+                    if (box) return {...box, source: 'iframe'};
+                }
+            }
+
+            for (const selector of ['.cf-turnstile', '[data-sitekey]', 'input[name="cf-turnstile-response"]']) {
+                let el = document.querySelector(selector);
+                for (let i = 0; i < 8 && el; i++) {
+                    const box = visibleBox(el);
+                    if (box && box.width >= 40 && box.height >= 20) {
+                        return {...box, source: selector};
+                    }
+                    el = el.parentElement;
+                }
+            }
+
+            if ((document.body.innerText || '').includes("Verify you're human")) {
+                return {
+                    x: 0,
+                    y: Math.round(window.innerHeight * 0.48),
+                    width: 310,
+                    height: 90,
+                    click_x: 30,
+                    click_y: Math.round(window.innerHeight * 0.54),
+                    source: 'left-panel-fallback'
+                };
+            }
+
+            return null;
+        """)
+    except Exception as exc:
+        log(f"Turnstile coord detection failed: {exc}")
+        return None
+
+
+def click_turnstile_by_coords(sb):
+    coords = get_turnstile_click_coords(sb)
+    if not coords:
+        log("No Turnstile click coordinates available.")
+        return False
+
+    log(
+        "Turnstile target "
+        f"{coords.get('source')} box=({coords.get('x')},{coords.get('y')},"
+        f"{coords.get('width')},{coords.get('height')}) "
+        f"viewportClick=({coords.get('click_x')},{coords.get('click_y')})"
+    )
+
+    try:
+        window_info = sb.execute_script("""
+            return {
+                screenX: window.screenX || 0,
+                screenY: window.screenY || 0,
+                outerHeight: window.outerHeight || window.innerHeight,
+                innerHeight: window.innerHeight
+            };
+        """)
+        chrome_bar_height = max(0, int(window_info["outerHeight"]) - int(window_info["innerHeight"]))
+        abs_x = int(coords["click_x"]) + int(window_info["screenX"])
+        abs_y = int(coords["click_y"]) + int(window_info["screenY"]) + chrome_bar_height
+        return xdotool_click(abs_x, abs_y)
+    except Exception as exc:
+        log(f"Turnstile absolute coordinate click failed: {exc}")
+        return False
+
+
 def handle_turnstile(sb, timeout=90, auto_wait=25):
     if not ts_exists(sb):
         return True
@@ -314,6 +439,13 @@ def handle_turnstile(sb, timeout=90, auto_wait=25):
         except Exception as exc:
             log(f"uc_gui_click_captcha failed: {exc}")
         time.sleep(2)
+
+        if not ts_exists(sb) or ts_solved(sb):
+            log("Turnstile passed after uc_gui_click_captcha.")
+            return True
+
+        click_turnstile_by_coords(sb)
+        time.sleep(3)
 
     return False
 
