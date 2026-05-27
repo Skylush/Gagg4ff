@@ -206,7 +206,8 @@ export async function tryClickTurnstile(page) {
 export async function handleTurnstile(page, options = {}) {
   const {
     timeoutMs = 120000,
-    probeIntervalMs = 2000
+    probeIntervalMs = 2000,
+    autoWaitMs = 8000
   } = options;
 
   if (!(await hasTurnstile(page))) {
@@ -215,14 +216,35 @@ export async function handleTurnstile(page, options = {}) {
 
   log("Turnstile detected. Starting solve loop.");
   const startedAt = Date.now();
+  const autoWaitDeadline = startedAt + Math.min(autoWaitMs, timeoutMs);
   let attempt = 0;
-  while (Date.now() - startedAt < timeoutMs) {
+
+  log(`Turnstile auto-wait phase started for up to ${autoWaitMs}ms.`);
+  while (Date.now() < autoWaitDeadline) {
     attempt += 1;
+    if (!(await hasTurnstile(page))) {
+      log(`Turnstile cleared automatically after ${attempt} checks.`);
+      return { status: "cleared" };
+    }
     if (await isTurnstileSolved(page)) {
-      log(`Turnstile solved after ${attempt} attempts.`);
+      log(`Turnstile solved automatically after ${attempt} checks.`);
       return { status: "solved" };
     }
+    log(`Turnstile auto-wait check ${attempt}: challenge still present.`);
+    await page.waitForTimeout(probeIntervalMs);
+  }
 
+  log("Turnstile auto-wait phase ended. Escalating to click fallback.");
+  while (Date.now() - startedAt < timeoutMs) {
+    attempt += 1;
+    if (!(await hasTurnstile(page))) {
+      log(`Turnstile cleared after ${attempt} total checks.`);
+      return { status: "cleared" };
+    }
+    if (await isTurnstileSolved(page)) {
+      log(`Turnstile solved after ${attempt} total checks.`);
+      return { status: "solved" };
+    }
     log(`Turnstile attempt ${attempt}: revealing, focusing, and clicking.`);
     await revealTurnstile(page);
     await focusTurnstile(page);
