@@ -6,9 +6,13 @@ export async function launchSession({
   serverUrl,
   cookieHeader,
   headless = true,
-  viewport = { width: 1440, height: 1024 }
+  viewport = { width: 1440, height: 1024 },
+  launchArgs = []
 }) {
-  const browser = await chromium.launch({ headless });
+  const browser = await chromium.launch({
+    headless,
+    args: launchArgs
+  });
   const context = await browser.newContext({ viewport });
 
   if (cookieHeader) {
