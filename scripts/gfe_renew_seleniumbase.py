@@ -351,7 +351,6 @@ def run():
     with SB(
         uc=True,
         test=True,
-        xvfb=False,
         locale="en",
         headless=False,
         chromium_arg=(
