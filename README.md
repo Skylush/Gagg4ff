@@ -9,6 +9,8 @@
 - `src/lib/telegram.js`: Telegram 文本/图片通知
 - `src/lib/turnstile.js`: Cloudflare Turnstile 的通用检测、聚焦、尝试点击、等待处理
 
+当前 GitHub Actions 默认执行 `scripts/gfe_renew_seleniumbase.py`。这个入口参考了 SeleniumBase UC 模式，优先等待 Cloudflare 自动验证通过，失败后再调用 SeleniumBase 的验证码辅助处理能力。
+
 ## 功能
 
 - 每 80 分钟执行一次检查
