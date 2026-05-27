@@ -166,7 +166,7 @@ function escapeHtml(text) {
 
 async function notifySuccess(botToken, chatId, remainingSeconds) {
   const text = [
-    "<b>GFE 自动续期成功</b>",
+    "<b>GFE-US 自动续期成功</b>",
     `剩余时间: <code>${escapeHtml(formatDuration(remainingSeconds))}</code>`,
     `时间增量: <code>${escapeHtml(formatDuration(EXTEND_SECONDS))}</code>`,
     `冷却时间: <code>${escapeHtml(formatDuration(COOLDOWN_SECONDS))}</code>`
@@ -176,7 +176,7 @@ async function notifySuccess(botToken, chatId, remainingSeconds) {
 }
 
 async function notifySkip(botToken, chatId, reason, remainingSeconds, cooldownSeconds) {
-  const lines = ["<b>GFE 本轮未续期</b>", escapeHtml(reason)];
+  const lines = ["<b>GFE-US 本轮未续期</b>", escapeHtml(reason)];
 
   if (remainingSeconds >= 0) {
     lines.push(`剩余时间: <code>${escapeHtml(formatDuration(remainingSeconds))}</code>`);
@@ -192,7 +192,7 @@ async function notifySkip(botToken, chatId, reason, remainingSeconds, cooldownSe
 async function notifyFailure(botToken, chatId, error) {
   const tailLogs = runtimeLogs.slice(-20).join("\n");
   const message = [
-    "<b>GFE 自动续期失败</b>",
+    "<b>GFE-US 自动续期失败</b>",
     `错误: <code>${escapeHtml(error.message || String(error))}</code>`,
     "",
     "<b>日志片段</b>",
