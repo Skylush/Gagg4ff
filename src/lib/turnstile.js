@@ -111,6 +111,36 @@ export async function isTurnstileSolved(page) {
   });
 }
 
+export async function hasClickableTurnstileTarget(page) {
+  for (const selector of [
+    'iframe[src*="challenges.cloudflare.com"]',
+    'iframe[src*="turnstile"]',
+    ".cf-turnstile"
+  ]) {
+    const locator = page.locator(selector).first();
+    if (!(await locator.count())) {
+      continue;
+    }
+    const box = await locator.boundingBox();
+    if (box && box.width > 8 && box.height > 8) {
+      return true;
+    }
+  }
+
+  for (const frame of page.frames()) {
+    try {
+      const checkbox = frame.locator('input[type="checkbox"]').first();
+      if (await checkbox.count()) {
+        return true;
+      }
+    } catch {
+      // Ignore inaccessible frames.
+    }
+  }
+
+  return false;
+}
+
 export async function revealTurnstile(page) {
   await page.evaluate(() => {
     const input = document.querySelector('input[name="cf-turnstile-response"]');
@@ -207,7 +237,7 @@ export async function handleTurnstile(page, options = {}) {
   const {
     timeoutMs = 120000,
     probeIntervalMs = 2000,
-    autoWaitMs = 8000
+    autoWaitMs = 20000
   } = options;
 
   if (!(await hasTurnstile(page))) {
@@ -245,6 +275,13 @@ export async function handleTurnstile(page, options = {}) {
       log(`Turnstile solved after ${attempt} total checks.`);
       return { status: "solved" };
     }
+
+    if (!(await hasClickableTurnstileTarget(page))) {
+      log(`Turnstile attempt ${attempt}: challenge present but no clickable target. Continuing passive wait.`);
+      await page.waitForTimeout(probeIntervalMs);
+      continue;
+    }
+
     log(`Turnstile attempt ${attempt}: revealing, focusing, and clicking.`);
     await revealTurnstile(page);
     await focusTurnstile(page);
