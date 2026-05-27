@@ -5,6 +5,49 @@ const DEFAULT_SELECTORS = [
   'iframe[src*="turnstile"]'
 ];
 
+async function clickIframeBox(page) {
+  for (const selector of [
+    'iframe[src*="challenges.cloudflare.com"]',
+    'iframe[src*="turnstile"]'
+  ]) {
+    const frameElement = page.locator(selector).first();
+    if (!(await frameElement.count())) {
+      continue;
+    }
+
+    const box = await frameElement.boundingBox();
+    if (!box) {
+      continue;
+    }
+
+    await page.mouse.move(box.x + Math.min(30, box.width / 4), box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.up();
+    return true;
+  }
+
+  return false;
+}
+
+async function clickWidgetContainer(page) {
+  for (const selector of [".cf-turnstile", '[name="cf-turnstile-response"]']) {
+    const locator = page.locator(selector).first();
+    if (!(await locator.count())) {
+      continue;
+    }
+
+    const box = await locator.boundingBox();
+    if (!box) {
+      continue;
+    }
+
+    await page.mouse.click(box.x + Math.min(30, Math.max(12, box.width / 4)), box.y + box.height / 2);
+    return true;
+  }
+
+  return false;
+}
+
 export async function hasTurnstile(page, selectors = DEFAULT_SELECTORS) {
   return page.evaluate((activeSelectors) => {
     return activeSelectors.some((selector) => document.querySelector(selector));
@@ -82,6 +125,10 @@ export async function tryClickTurnstile(page) {
     }
   }
 
+  if (await clickIframeBox(page)) {
+    return true;
+  }
+
   for (const selector of [".cf-turnstile", 'iframe[src*="turnstile"]']) {
     try {
       const locator = page.locator(selector).first();
@@ -92,6 +139,10 @@ export async function tryClickTurnstile(page) {
     } catch {
       // Ignore and continue through fallbacks.
     }
+  }
+
+  if (await clickWidgetContainer(page)) {
+    return true;
   }
 
   return false;
