@@ -33,6 +33,11 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install GUI packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb x11-utils xdotool scrot python3-tk
+
       - name: Install dependencies
         run: |
           npm install
@@ -44,7 +49,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run renew task
-        run: xvfb-run -a --server-args="-screen 0 1440x1024x24" python scripts/gfe_renew_seleniumbase.py
+        run: python scripts/gfe_renew_seleniumbase.py
 
       - name: Upload artifacts
         if: always()
