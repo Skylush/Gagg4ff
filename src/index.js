@@ -88,8 +88,13 @@ async function main() {
     ({ browser, page } = await launchSession({
       serverUrl,
       cookieHeader,
-      headless: true,
-      viewport: { width: 1440, height: 1024 }
+      headless: false,
+      viewport: { width: 1440, height: 1024 },
+      launchArgs: [
+        "--disable-blink-features=AutomationControlled",
+        "--disable-dev-shm-usage",
+        "--no-sandbox"
+      ]
     }));
 
     await gotoAndVerify(page, serverUrl, {
