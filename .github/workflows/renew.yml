@@ -28,14 +28,23 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Install dependencies
-        run: npm install
+        run: |
+          npm install
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          seleniumbase install chromedriver
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
       - name: Run renew task
-        run: xvfb-run -a --server-args="-screen 0 1440x1024x24" npm run renew
+        run: xvfb-run -a --server-args="-screen 0 1440x1024x24" python scripts/gfe_renew_seleniumbase.py
 
       - name: Upload artifacts
         if: always()
